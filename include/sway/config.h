@@ -529,6 +529,7 @@ struct sway_config {
 	bool validating;
 	bool auto_back_and_forth;
 	bool show_marks;
+	bool show_titlebars;
 	enum alignment title_align;
 
 	bool tiling_drag;

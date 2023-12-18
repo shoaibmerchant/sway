@@ -820,6 +820,9 @@ The default colors are:
 	Any mark that starts with an underscore will not be drawn even if
 	*show_marks* is yes. The default is _yes_.
 
+*show_titlebars* yes|no
+	Shows the titlebars on the windows in all layouts. The default is _yes_.
+
 *opacity* [set|plus|minus] <value>
 	Adjusts the opacity of the window between 0 (completely transparent) and
 	1 (completely opaque). If the operation is omitted, _set_ will be used.

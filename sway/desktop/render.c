@@ -428,6 +428,7 @@ static void render_titlebar(struct sway_output *output,
 		int x, int y, int width,
 		struct border_colors *colors, struct wlr_texture *title_texture,
 		struct wlr_texture *marks_texture) {
+
 	struct wlr_box box;
 	float color[4];
 	float output_scale = output->wlr_output->scale;
@@ -438,9 +439,15 @@ static void render_titlebar(struct sway_output *output,
 	int titlebar_v_padding = config->titlebar_v_padding;
 	enum alignment title_align = config->title_align;
 
-	// Single pixel bar above title
 	memcpy(&color, colors->border, sizeof(float) * 4);
 	premultiply_alpha(color, con->alpha);
+
+	// dont draw title if disabled
+	if (!config->show_titlebars) {
+		return;
+	}
+
+	// Single pixel bar above title
 	box.x = x;
 	box.y = y;
 	box.width = width;
@@ -747,7 +754,7 @@ static void render_containers_linear(struct sway_output *output,
 				marks_texture = child->marks_unfocused;
 			}
 
-			if (state->border == B_NORMAL) {
+			if (state->border == B_NORMAL && config->show_titlebars) {
 				render_titlebar(output, damage, child, floor(state->x),
 						floor(state->y), state->width, colors,
 						title_texture, marks_texture);
@@ -777,59 +784,62 @@ static void render_containers_tabbed(struct sway_output *output,
 		pixman_region32_t *damage, struct parent_data *parent) {
 	if (!parent->children->length) {
 		return;
-	}
+	}	
+
 	struct sway_container *current = parent->active_child;
 	struct border_colors *current_colors = &config->border_colors.unfocused;
-	int tab_width = parent->box.width / parent->children->length;
+	if (config->show_titlebars) {
+		int tab_width = parent->box.width / parent->children->length;
 
-	// Render tabs
-	for (int i = 0; i < parent->children->length; ++i) {
-		struct sway_container *child = parent->children->items[i];
-		struct sway_view *view = child->view;
-		struct sway_container_state *cstate = &child->current;
-		struct border_colors *colors;
-		struct wlr_texture *title_texture;
-		struct wlr_texture *marks_texture;
-		bool urgent = view ?
-			view_is_urgent(view) : container_has_urgent_child(child);
+		// Render tabs
+		for (int i = 0; i < parent->children->length; ++i) {
+			struct sway_container *child = parent->children->items[i];
+			struct sway_view *view = child->view;
+			struct sway_container_state *cstate = &child->current;
+			struct border_colors *colors;
+			struct wlr_texture *title_texture;
+			struct wlr_texture *marks_texture;
+			bool urgent = view ?
+				view_is_urgent(view) : container_has_urgent_child(child);
 
-		if (urgent) {
-			colors = &config->border_colors.urgent;
-			title_texture = child->title_urgent;
-			marks_texture = child->marks_urgent;
-		} else if (cstate->focused || parent->focused) {
-			colors = &config->border_colors.focused;
-			title_texture = child->title_focused;
-			marks_texture = child->marks_focused;
-		} else if (config->has_focused_tab_title && container_has_focused_child(child)) {
-			colors = &config->border_colors.focused_tab_title;
-			title_texture = child->title_focused_tab_title;
-			marks_texture = child->marks_focused_tab_title;
-		} else if (child == parent->active_child) {
-			colors = &config->border_colors.focused_inactive;
-			title_texture = child->title_focused_inactive;
-			marks_texture = child->marks_focused_inactive;
-		} else {
-			colors = &config->border_colors.unfocused;
-			title_texture = child->title_unfocused;
-			marks_texture = child->marks_unfocused;
-		}
+			if (urgent) {
+				colors = &config->border_colors.urgent;
+				title_texture = child->title_urgent;
+				marks_texture = child->marks_urgent;
+			} else if (cstate->focused || parent->focused) {
+				colors = &config->border_colors.focused;
+				title_texture = child->title_focused;
+				marks_texture = child->marks_focused;
+			} else if (config->has_focused_tab_title && container_has_focused_child(child)) {
+				colors = &config->border_colors.focused_tab_title;
+				title_texture = child->title_focused_tab_title;
+				marks_texture = child->marks_focused_tab_title;
+			} else if (child == parent->active_child) {
+				colors = &config->border_colors.focused_inactive;
+				title_texture = child->title_focused_inactive;
+				marks_texture = child->marks_focused_inactive;
+			} else {
+				colors = &config->border_colors.unfocused;
+				title_texture = child->title_unfocused;
+				marks_texture = child->marks_unfocused;
+			}
 
-		int x = floor(cstate->x + tab_width * i);
+			int x = floor(cstate->x + tab_width * i);
 
-		// Make last tab use the remaining width of the parent
-		if (i == parent->children->length - 1) {
-			tab_width = parent->box.width - tab_width * i;
-		}
+			// Make last tab use the remaining width of the parent
+			if (i == parent->children->length - 1) {
+				tab_width = parent->box.width - tab_width * i;
+			}
 
-		render_titlebar(output, damage, child, x, parent->box.y, tab_width,
-				colors, title_texture, marks_texture);
+			render_titlebar(output, damage, child, x, parent->box.y, tab_width,
+					colors, title_texture, marks_texture);
 
-		if (child == current) {
-			current_colors = colors;
+			if (child == current) {
+				current_colors = colors;
+			}
 		}
 	}
-
+	
 	// Render surface and left/right/bottom borders
 	if (current->view) {
 		render_view(output, damage, current, current_colors);
@@ -849,47 +859,50 @@ static void render_containers_stacked(struct sway_output *output,
 	}
 	struct sway_container *current = parent->active_child;
 	struct border_colors *current_colors = &config->border_colors.unfocused;
-	size_t titlebar_height = container_titlebar_height();
 
-	// Render titles
-	for (int i = 0; i < parent->children->length; ++i) {
-		struct sway_container *child = parent->children->items[i];
-		struct sway_view *view = child->view;
-		struct sway_container_state *cstate = &child->current;
-		struct border_colors *colors;
-		struct wlr_texture *title_texture;
-		struct wlr_texture *marks_texture;
-		bool urgent = view ?
-			view_is_urgent(view) : container_has_urgent_child(child);
+	if (config->show_titlebars) {
+		size_t titlebar_height = container_titlebar_height();
 
-		if (urgent) {
-			colors = &config->border_colors.urgent;
-			title_texture = child->title_urgent;
-			marks_texture = child->marks_urgent;
-		} else if (cstate->focused || parent->focused) {
-			colors = &config->border_colors.focused;
-			title_texture = child->title_focused;
-			marks_texture = child->marks_focused;
-		} else if (config->has_focused_tab_title && container_has_focused_child(child)) {
-			colors = &config->border_colors.focused_tab_title;
-			title_texture = child->title_focused_tab_title;
-			marks_texture = child->marks_focused_tab_title;
-		 } else if (child == parent->active_child) {
-			colors = &config->border_colors.focused_inactive;
-			title_texture = child->title_focused_inactive;
-			marks_texture = child->marks_focused_inactive;
-		} else {
-			colors = &config->border_colors.unfocused;
-			title_texture = child->title_unfocused;
-			marks_texture = child->marks_unfocused;
-		}
+		// Render titles
+		for (int i = 0; i < parent->children->length; ++i) {
+			struct sway_container *child = parent->children->items[i];
+			struct sway_view *view = child->view;
+			struct sway_container_state *cstate = &child->current;
+			struct border_colors *colors;
+			struct wlr_texture *title_texture;
+			struct wlr_texture *marks_texture;
+			bool urgent = view ?
+				view_is_urgent(view) : container_has_urgent_child(child);
 
-		int y = parent->box.y + titlebar_height * i;
-		render_titlebar(output, damage, child, parent->box.x, y,
-				parent->box.width, colors, title_texture, marks_texture);
+			if (urgent) {
+				colors = &config->border_colors.urgent;
+				title_texture = child->title_urgent;
+				marks_texture = child->marks_urgent;
+			} else if (cstate->focused || parent->focused) {
+				colors = &config->border_colors.focused;
+				title_texture = child->title_focused;
+				marks_texture = child->marks_focused;
+			} else if (config->has_focused_tab_title && container_has_focused_child(child)) {
+				colors = &config->border_colors.focused_tab_title;
+				title_texture = child->title_focused_tab_title;
+				marks_texture = child->marks_focused_tab_title;
+			} else if (child == parent->active_child) {
+				colors = &config->border_colors.focused_inactive;
+				title_texture = child->title_focused_inactive;
+				marks_texture = child->marks_focused_inactive;
+			} else {
+				colors = &config->border_colors.unfocused;
+				title_texture = child->title_unfocused;
+				marks_texture = child->marks_unfocused;
+			}
 
-		if (child == current) {
-			current_colors = colors;
+			int y = parent->box.y + titlebar_height * i;
+			render_titlebar(output, damage, child, parent->box.x, y,
+					parent->box.width, colors, title_texture, marks_texture);
+
+			if (child == current) {
+				current_colors = colors;
+			}
 		}
 	}
 
@@ -983,7 +996,7 @@ static void render_floating_container(struct sway_output *soutput,
 			marks_texture = con->marks_unfocused;
 		}
 
-		if (con->current.border == B_NORMAL) {
+		if (con->current.border == B_NORMAL && config->show_titlebars) {
 			render_titlebar(soutput, damage, con, floor(con->current.x),
 					floor(con->current.y), con->current.width, colors,
 					title_texture, marks_texture);
